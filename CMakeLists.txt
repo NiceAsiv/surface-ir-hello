@@ -26,16 +26,21 @@ find_package(tomlplusplus CONFIG REQUIRED)
 pkg_check_modules(JsonCpp REQUIRED IMPORTED_TARGET jsoncpp)
 find_library(PAM_LIBRARY pam REQUIRED)
 
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/packaging/kde-face.pam" SURFACE_IR_KDE_FACE_POLICY)
+configure_file(packaging/kde_face_policy.hpp.in kde_face_policy.hpp @ONLY)
+
 add_library(surface_ir_core STATIC
     src/native/camera.cpp
     src/native/data.cpp
     src/native/enrollment.cpp
+    src/native/pam_config.cpp
     src/native/protocol.cpp
     src/native/recognition.cpp
 )
 target_link_libraries(surface_ir_core PUBLIC ${OpenCV_LIBS} PkgConfig::JsonCpp
     PRIVATE Threads::Threads CURL::libcurl OpenSSL::Crypto tomlplusplus::tomlplusplus)
 target_include_directories(surface_ir_core PUBLIC src/native ${OpenCV_INCLUDE_DIRS})
+target_include_directories(surface_ir_core PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_options(surface_ir_core PRIVATE -Wall -Wextra -Wpedantic)
 
 add_executable(surface-ir src/native/cli.cpp)

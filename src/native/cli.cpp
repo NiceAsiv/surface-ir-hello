@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "core.hpp"
+#include "pam_config.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -8,13 +9,11 @@
 #include <iostream>
 #include <opencv2/imgcodecs.hpp>
 #include <sys/stat.h>
-#include <sstream>
 #include <termios.h>
 
 namespace {
 using namespace surface;
 constexpr auto program = "surface-ir";
-constexpr auto pamLine = "auth       sufficient                  pam_surface_ir.so quiet";
 
 void requireRoot()
 {
@@ -31,7 +30,7 @@ void usage(std::ostream &out)
            "  verify [USER]                               Test live IR verification\n"
            "  list                                        List enrolled users\n"
            "  clear [USER]                                Delete a user's samples\n"
-           "  pam-enable                                  Enable legacy PAM hooks\n"
+           "  pam-enable                                  Install the dedicated KDE Face PAM policy\n"
            "  pam-disable                                 Disable legacy PAM hooks\n";
 }
 
@@ -285,56 +284,19 @@ void listUsers()
         std::cout << std::format("  {}: {} IR template(s)\n", user, loadSamples(user).size());
 }
 
-void writePam(const fs::path &file, const std::string &text, mode_t mode)
-{
-    TemporaryFile tmp(file);
-    if (fchmod(tmp.fd(), mode) < 0)
-        syserror("Set PAM file permissions");
-    writeAll(tmp.fd(), text);
-    tmp.commit(file);
-}
-
 void changePam(bool enable)
 {
     requireRoot();
-    for (const std::string service : {"sudo", "kde", "sddm"}) {
-        if (enable && service == "kde" && fs::exists("/etc/pam.d/kde-face")) {
-            std::cout << "  KDE already uses the dedicated kde-face entry.\n";
-            continue;
-        }
-        const fs::path file = fs::path("/etc/pam.d") / service;
-        const fs::path vendor = fs::path("/usr/lib/pam.d") / service;
-        const auto source = fs::exists(file) ? file : vendor;
-        if (!fs::exists(source) || (!enable && source != file))
-            continue;
-        struct stat info{};
-        if (stat(source.c_str(), &info) < 0)
-            syserror("Inspect PAM configuration");
-        if (!S_ISREG(info.st_mode) || fs::is_symlink(fs::symlink_status(file)))
-            throw std::runtime_error("Unexpected PAM file type: " + file.string());
-        auto text = readText(source);
-        if (enable) {
-            if (text.find("pam_surface_ir.so") != text.npos)
-                continue;
-            const auto backup = file.string() + ".surface-ir.bak";
-            if (!fs::exists(backup))
-                writePam(backup, text, info.st_mode & 0777);
-            const auto header = text.find('\n');
-            const auto position = text.starts_with("#%PAM") && header != text.npos ? header + 1 : 0;
-            text.insert(position, std::string(pamLine) + '\n');
-        } else {
-            std::istringstream old(text);
-            std::string line, clean;
-            while (std::getline(old, line)) {
-                if (line.find("pam_surface_ir.so") == line.npos)
-                    clean += line + '\n';
-            }
-            if (text.find("pam_surface_ir.so") == text.npos)
-                continue;
-            text = std::move(clean);
-        }
-        writePam(file, text, info.st_mode & 0777);
-        std::cout << (enable ? "  Enabled in " : "  Disabled in ") << file.string() << '\n';
+    const fs::path directory = "/etc/pam.d";
+    if (enable) {
+        const bool installed = installKdeFacePam(directory);
+        std::cout << (installed ? "Installed " : "Already installed ") << (directory / "kde-face").string() << '\n';
+        return;
+    }
+
+    for (const auto *service : {"sudo", "kde", "sddm"}) {
+        if (removeLegacyPamHook(directory / service))
+            std::cout << "Disabled the legacy hook in " << (directory / service).string() << '\n';
     }
 }
 }

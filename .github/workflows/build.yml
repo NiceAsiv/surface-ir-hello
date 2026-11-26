@@ -1,0 +1,68 @@
+name: Linux build and tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Arch Linux (${{ matrix.flavor }})
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - flavor: core
+            kde: 'OFF'
+          - flavor: KDE
+            kde: 'ON'
+    defaults:
+      run:
+        shell: bash
+    env:
+      SURFACE_IR_KDE: '${{ matrix.kde }}'
+    steps:
+      - name: Install build dependencies
+        run: |
+          packages=(git gcc cmake ninja pkgconf opencv openssl curl jsoncpp tomlplusplus pam)
+          if [[ "$SURFACE_IR_KDE" == ON ]]; then
+            packages+=(extra-cmake-modules qt6-base qt6-declarative kcmutils ki18n kcoreaddons)
+          fi
+          pacman -Syu --noconfirm --needed "${packages[@]}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DSURFACE_IR_KDE="$SURFACE_IR_KDE"
+      - name: Build and run tests
+        run: |
+          cmake --build build --parallel 2
+          ctest --test-dir build --output-on-failure --no-tests=error
+      - name: Check staged installation
+        run: |
+          stage=$(mktemp -d)
+          DESTDIR="$stage/core" cmake --install build --component Core
+          test -x "$stage/core/usr/bin/surface-ir-hellod"
+          test -r "$stage/core/usr/lib/security/pam_surface_ir.so"
+          test -r "$stage/core/etc/surface-ir-hello/config.toml"
+          if [[ "$SURFACE_IR_KDE" == ON ]]; then
+            DESTDIR="$stage/kde" cmake --install build --component KDE
+            test -x "$stage/kde/usr/lib/libexec/surface-ir-hello/surface-ir-enroll-helper"
+            test -r "$stage/kde/usr/share/locale/zh_CN/LC_MESSAGES/kcm_surfaceir.mo"
+          fi

@@ -48,10 +48,10 @@ Reopen System Settings or run `kcmshell6 kcm_surfaceir`. Select **Enroll face**,
 
 ## Enable the KDE Face button
 
-For KDE Plasma 6.8 with the `kde-face` service compiled in, install the example PAM file on a clean setup and enable the user setting. Run `kwriteconfig6` as your desktop user. If `/etc/pam.d/kde-face` already exists, review it before applying the example.
+For KDE Plasma 6.8 with the `kde-face` service compiled in, install its dedicated PAM policy and enable the user setting. Run `kwriteconfig6` as your desktop user. The installer preserves an existing custom policy and asks you to review it.
 
 ```sh
-sudo install -m 0644 /usr/share/surface-ir-hello/kde-face.pam /etc/pam.d/kde-face
+sudo surface-ir pam-enable
 kwriteconfig6 --file kscreenlockerrc --group Authenticators --key Face --type bool true
 ```
 
@@ -70,7 +70,7 @@ Install both native components if you already use the graphical enrollment page.
 
 ## Testing and compatibility
 
-Run `ctest --test-dir build --output-on-failure` after building. It checks IPU3 frame unpacking, template format and concurrent writes, and the socket protocol. On Linux-PAM versions that provide an isolated configuration directory, it also checks that the module declines remote authentication before prompting.
+Run `ctest --test-dir build --output-on-failure` after building. GitHub Actions builds and checks the core and KDE configurations on Arch Linux. It checks IPU3 frame unpacking, template format and concurrent writes, and the socket protocol. On Linux-PAM versions that provide an isolated configuration directory, it also checks that the module declines remote authentication before prompting.
 
 To report another device, include its model, distribution, kernel and Plasma versions, plus the text output from `sudo surface-ir hwcheck`. Run the hardware check without `--save-debug`. Record hardware capture, desktop enrollment, face unlock and password unlock as separate results.
 
@@ -82,7 +82,7 @@ PAM connects the desktop's authentication service to the running face-verificati
 
 Face templates are local, root-readable files under `/etc/surface-ir-hello/faces/`. The settings page and terminal render previews in memory. The program writes a camera image when you explicitly pass `hwcheck --save-debug`. Leave templates and debug images out of issue reports and patches.
 
-The active IR check measures how scene lighting changes when the emitter is turned on. Its presentation-attack resistance has not been validated. Keep a working password and test it before relying on face unlock.
+The active IR check measures how scene lighting changes when the emitter is turned on. Its presentation-attack resistance has not been validated. Keep a working password and test it before relying on face unlock. See the [security policy](SECURITY.md) for reporting.
 
 ## Licenses
 

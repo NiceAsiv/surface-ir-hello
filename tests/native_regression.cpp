@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "core.hpp"
+#include "pam_config.hpp"
 #include "wire.hpp"
 
 #include <cmath>
@@ -52,6 +53,37 @@ void compatibility()
         config << "[ir]\nemitter_current_ma = 390\nexposure_max = 340\n"
                   "[auth]\ncosine_threshold = 0.45\ntimeout_sec = 2.75\nrequire_active_ir_liveness = true\n";
     }
+    const auto pam = directory.path / "kde-face";
+    expect(installKdeFacePam(directory.path), "KDE Face PAM policy installed");
+    const auto expectedPolicy = readText(pam);
+    expect(expectedPolicy.find("pam_surface_ir.so") != expectedPolicy.npos &&
+           expectedPolicy.find("pam_deny.so") != expectedPolicy.npos, "dedicated PAM policy has an explicit denial fallback");
+    expect(!installKdeFacePam(directory.path), "dedicated policy installation is idempotent");
+    const auto regular = directory.path / "sudo";
+    {
+        std::ofstream output(regular);
+        output << "#%PAM-1.0\n"
+                  "auth       sufficient                  pam_surface_ir.so quiet\n"
+                  "# Custom comment mentioning pam_surface_ir.so\n"
+                  "auth include system-auth";
+    }
+    expect(removeLegacyPamHook(regular), "legacy hook removed");
+    expect(readText(regular) == "#%PAM-1.0\n# Custom comment mentioning pam_surface_ir.so\nauth include system-auth",
+           "legacy cleanup preserves other policy text");
+    expect(!removeLegacyPamHook(regular), "legacy cleanup is idempotent");
+    constexpr std::string_view customPolicy = "#%PAM-1.0\nauth required pam_deny.so\n";
+    {
+        std::ofstream output(pam);
+        output << customPolicy;
+    }
+    bool refusedOverwrite = false;
+    try {
+        installKdeFacePam(directory.path);
+    } catch (const std::runtime_error &) {
+        refusedOverwrite = true;
+    }
+    expect(refusedOverwrite && readText(pam) == customPolicy, "custom PAM policy preserved");
+
     const auto config = loadConfig(directory.path / "config.toml");
     expect(config.ir.current == 390.0 && config.ir.exposureMax == 340 &&
            config.timeout == 2750ms && config.threshold == 0.45 && config.activeIr, "existing TOML keys and numeric types");

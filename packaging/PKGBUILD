@@ -17,6 +17,10 @@ build() {
     cmake --build "$srcdir/build"
 }
 
+check() {
+    ctest --test-dir "$srcdir/build" --output-on-failure
+}
+
 package_surface-ir-hello() {
     depends=('gcc-libs' 'opencv' 'openssl' 'curl' 'jsoncpp' 'tomlplusplus' 'pam')
     optdepends=('surface-ir-hello-kde: graphical enrollment in KDE System Settings')

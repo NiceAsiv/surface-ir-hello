@@ -12,3 +12,7 @@ src/*.pkg.tar*
 /tools/pamtest.c
 /build-kcm/
 /build/
+
+/build-*/
+/packaging/src/
+*.pkg.tar.*
