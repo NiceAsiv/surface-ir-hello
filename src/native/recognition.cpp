@@ -152,10 +152,19 @@ cv::Mat normalize(const cv::Mat &frame, cv::Ptr<cv::CLAHE> clahe)
 
 cv::Mat previewGray(const cv::Mat &frame, const Face *face)
 {
-    cv::Mat gray;
-    cv::cvtColor(face ? face->image : normalize(frame), gray, cv::COLOR_BGR2GRAY);
-    if (face)
-        cv::rectangle(gray, face->bounds, 255, 4);
+    cv::Mat reduced, gray;
+    constexpr int previewWidth = 288;
+    cv::resize(frame, reduced, {previewWidth, frame.rows * previewWidth / frame.cols}, 0, 0, cv::INTER_AREA);
+    const int angle = face ? face->angle : 0;
+    cv::cvtColor(orient(normalize(reduced), angle), gray, cv::COLOR_BGR2GRAY);
+    if (face) {
+        const bool sideways = angle == 90 || angle == 270;
+        const double x = double(gray.cols) / (sideways ? frame.rows : frame.cols);
+        const double y = double(gray.rows) / (sideways ? frame.cols : frame.rows);
+        const auto &box = face->bounds;
+        const cv::Rect scaled{int(box.x * x), int(box.y * y), int(box.width * x), int(box.height * y)};
+        cv::rectangle(gray, scaled, 245, 1, cv::LINE_AA);
+    }
     return gray;
 }
 
@@ -203,7 +212,7 @@ std::optional<Face> Engine::detect(const cv::Mat &frame, std::span<const int> an
         cv::Mat crop, feature;
         recognizer_->alignCrop(image, best, crop);
         recognizer_->feature(crop, feature);
-        return Face{image, feature.reshape(1, 1).clone(),
+        return Face{feature.reshape(1, 1).clone(),
                     {std::max(0, int(face[0])), std::max(0, int(face[1])), int(face[2]), int(face[3])},
                     angle, face[14]};
     }
@@ -286,58 +295,5 @@ Verification verify(Engine &engine, const Json::Value &samples, const Config &co
     }
     return {false, std::format("FAIL best={:.3f} ms={} frames={} faces={} p95={:.0f}/{:.0f}",
                                best, elapsed(), frames, faces, ambient, peak)};
-}
-
-Json::Value capture(Engine &engine, const IrConfig &config, int target, const Progress &report, const Cancel &cancel)
-{
-    Json::Value samples(Json::arrayValue);
-    std::vector<cv::Mat> embeddings;
-    Camera camera(config);
-    camera.startEmitter();
-    auto lastCapture = Clock::time_point::min(), lastReport = Clock::now() - 1s;
-    std::string previous;
-    const auto deadline = Clock::now() + std::max(25s, std::chrono::seconds(target * 3));
-    for (int frame = 1; int(samples.size()) < target && Clock::now() < deadline; ++frame) {
-        if (interrupted || (cancel && cancel()))
-            throw Cancelled{};
-        const auto image = camera.frame(std::min(deadline, Clock::now() + 1500ms));
-        if (frame % 3 == 0)
-            camera.updateExposure(image);
-        const auto now = Clock::now();
-        if (frame <= 12 || (lastCapture != Clock::time_point::min() && now - lastCapture < 600ms))
-            continue;
-
-        const auto face = engine.detect(image);
-        std::string description;
-        if (!face) {
-            description = "Face not found. Center your face and move a little closer.";
-        } else if (face->confidence < 0.72f) {
-            description = "Face detected but unclear. Hold still and look toward the camera.";
-        } else if (std::any_of(embeddings.begin(), embeddings.end(), [&](const auto &sample) {
-            return engine.compare(face->embedding, sample) > 0.96;
-        })) {
-            description = "This view is similar to a sample already captured. Change your angle slightly.";
-        } else {
-            lastCapture = now;
-            embeddings.push_back(face->embedding);
-            Json::Value sample;
-            auto &vector = sample["embedding"] = Json::Value(Json::arrayValue);
-            const auto *feature = face->embedding.ptr<float>();
-            for (int i = 0; i < face->embedding.cols; ++i)
-                vector.append(std::round(double(feature[i]) * 1000000) / 1000000);
-            sample["angle"] = face->angle;
-            sample["ts"] = static_cast<Json::Int64>(std::time(nullptr));
-            sample["det_score"] = std::round(double(face->confidence) * 10000) / 10000;
-            samples.append(sample);
-            description = std::format("Captured. Detection confidence {:.3f}. Slowly change your pose.", face->confidence);
-        }
-        const auto status = std::format("[{}/{}] {}", samples.size(), target, description);
-        if (report && (status != previous || now - lastReport >= 250ms)) {
-            report(image, face ? &*face : nullptr, samples.size(), status);
-            lastReport = now;
-            previous = status;
-        }
-    }
-    return samples;
 }
 }

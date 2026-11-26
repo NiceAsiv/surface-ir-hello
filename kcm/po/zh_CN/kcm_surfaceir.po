@@ -1,0 +1,119 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: surface-ir-hello\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "Waiting for permission"
+msgstr "正在等待授权"
+
+msgid "Collect face samples"
+msgstr "正在采集人脸"
+
+msgid "Ready for verification"
+msgstr "可以开始自检"
+
+msgid "Checking your face"
+msgstr "正在验证人脸"
+
+msgid "Face samples saved"
+msgstr "人脸样本已保存"
+
+msgid "Cancelling"
+msgstr "正在取消"
+
+msgid "Enrollment cancelled"
+msgstr "已取消录入"
+
+msgid "Enrollment could not finish"
+msgstr "录入未完成"
+
+msgid "Add your face"
+msgstr "添加人脸"
+
+msgid "Approve camera access in the system dialog."
+msgstr "请在系统弹窗中授权访问摄像头。"
+
+msgid "Adjusting the infrared exposure…"
+msgstr "正在调整红外曝光…"
+
+msgid "Hold still and keep your face in the guide."
+msgstr "请稍微停一下，让脸保持在取景框内。"
+
+msgid "Turn your head slightly for another angle."
+msgstr "请稍微转头，换一个角度。"
+
+msgid "Sample captured. Try a slightly different angle."
+msgstr "已采集一张，请略微换个角度。"
+
+msgid "Center your face and look at the camera above the screen."
+msgstr "将脸对准取景框，看看屏幕上方的摄像头。"
+
+msgid "Return to your usual unlock position, then verify the new samples."
+msgstr "回到平时解锁的姿势，再验证新样本。"
+
+msgid "Keep looking at the camera while we check a fresh frame."
+msgstr "请继续看摄像头，系统正在验证新拍到的画面。"
+
+msgid "%1 face samples are stored on this device."
+msgstr "这台设备已保存 %1 个样本。"
+
+msgid "Stopping the camera…"
+msgstr "正在关闭摄像头…"
+
+msgid "Your existing face samples are still available."
+msgstr "原来的人脸样本仍然可以使用。"
+
+msgid "Five samples could not be captured. Try again from a steady position."
+msgstr "未能采集到五个样本。请保持稳定姿势再试一次。"
+
+msgid "The live check did not match. Try again from your usual unlock position."
+msgstr "自检未匹配。请用平时解锁的姿势再试一次。"
+
+msgid "Administrator permission is required to open the camera."
+msgstr "打开摄像头需要管理员授权。"
+
+msgid "The enrollment helper could not be started."
+msgstr "录入助手启动失败。"
+
+msgid "Check that the infrared camera is available and try again."
+msgstr "请确认红外摄像头可用后再试。"
+
+msgid "Sit at your usual unlock distance. Turn your head slightly between captures."
+msgstr "保持平时解锁的距离，每采集一张后稍微转头。"
+
+msgid "Infrared face enrollment"
+msgstr "红外人脸录入"
+
+msgid "Set up face unlock for the KDE lock screen."
+msgstr "为 KDE 锁屏设置人脸解锁。"
+
+msgid "Live infrared"
+msgstr "红外预览中"
+
+msgid "Infrared camera"
+msgstr "红外摄像头"
+
+msgid "Face samples"
+msgstr "人脸样本"
+
+msgid "%1 of %2"
+msgstr "%1 / %2"
+
+msgid "Verify and save"
+msgstr "验证并保存"
+
+msgid "Add more samples"
+msgstr "追加样本"
+
+msgid "Start enrollment"
+msgstr "开始录入"
+
+msgid "Cancel"
+msgstr "取消"
+
+msgid "Preview frames stay in memory. Face samples are saved on this device after verification."
+msgstr "预览画面仅在内存中显示。通过自检后，人脸样本会保存在这台设备上。"

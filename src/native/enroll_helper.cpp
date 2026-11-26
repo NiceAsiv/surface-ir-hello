@@ -22,23 +22,30 @@ void event(std::string_view type, std::string_view message, Json::Value values =
         throw Cancelled{};
 }
 
-void preview(const cv::Mat &frame, const Face *face, int captured, std::string_view status)
+void preview(const EnrollmentProgress &progress)
 {
-    const auto gray = previewGray(frame, face);
-    cv::Mat small;
-    cv::resize(gray, small, {160, static_cast<int>(std::round(160.0 * gray.rows / gray.cols))}, 0, 0, cv::INTER_AREA);
-    std::vector<unsigned char> png;
-    if (!cv::imencode(".png", small, png))
+    const auto gray = previewGray(progress.frame, progress.face);
+    std::vector<unsigned char> jpeg;
+    if (!cv::imencode(".jpg", gray, jpeg, {cv::IMWRITE_JPEG_QUALITY, 78}))
         return;
-    std::string encoded(4 * ((png.size() + 2) / 3) + 1, '\0');
-    const auto length = EVP_EncodeBlock(reinterpret_cast<unsigned char *>(encoded.data()), png.data(), png.size());
+    std::string encoded(4 * ((jpeg.size() + 2) / 3) + 1, '\0');
+    const auto length = EVP_EncodeBlock(reinterpret_cast<unsigned char *>(encoded.data()), jpeg.data(), jpeg.size());
     if (length <= 0)
         return;
     encoded.resize(length);
+    const char *hint = "";
+    switch (progress.hint) {
+    case EnrollmentHint::Warmup: hint = "warmup"; break;
+    case EnrollmentHint::Center: hint = "center"; break;
+    case EnrollmentHint::Hold: hint = "hold"; break;
+    case EnrollmentHint::Vary: hint = "vary"; break;
+    case EnrollmentHint::Captured: hint = "captured"; break;
+    }
     Json::Value payload;
-    payload["captured"] = captured;
-    payload["image"] = "data:image/png;base64," + encoded;
-    event("preview", status, std::move(payload));
+    payload["captured"] = progress.captured;
+    payload["hint"] = hint;
+    payload["image"] = "data:image/jpeg;base64," + encoded;
+    event("preview", enrollmentStatus(progress, sampleCount), std::move(payload));
 }
 
 std::string authorizedUser(int argc)
@@ -63,10 +70,13 @@ int enroll(const std::string &user)
     if (cancel())
         throw Cancelled{};
     const auto config = loadConfig();
+    cv::setNumThreads(2);
     Engine engine;
     const auto samples = capture(engine, config.ir, sampleCount, preview, cancel);
     if (samples.size() != sampleCount) {
-        event("result", "The capture timed out before all five samples were collected. Existing samples were kept.");
+        Json::Value failure;
+        failure["reason"] = "timeout";
+        event("result", "The capture timed out before all five samples were collected. Existing samples were kept.", std::move(failure));
         return 1;
     }
     event("ready", "Return to your normal unlock position, then choose Verify and save.");
@@ -74,13 +84,17 @@ int enroll(const std::string &user)
         throw Cancelled{};
     const auto result = verify(engine, samples, config, cancel);
     if (!result.ok) {
-        event("result", "Live match failed. Existing samples were kept. " + result.message);
+        Json::Value failure;
+        failure["reason"] = "nomatch";
+        event("result", "Live match failed. Existing samples were kept. " + result.message, std::move(failure));
         return 1;
     }
     if (cancel())
         throw Cancelled{};
     const auto total = saveSamples(user, samples, true);
-    event("result", "Saved five new face samples (" + std::to_string(total) + " total). " + result.message);
+    Json::Value saved;
+    saved["total"] = total;
+    event("result", "Saved five new face samples (" + std::to_string(total) + " total). " + result.message, std::move(saved));
     return 0;
 }
 }

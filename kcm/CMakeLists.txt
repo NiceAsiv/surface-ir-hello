@@ -19,3 +19,5 @@ configure_file(org.surfaceirhello.enroll.policy.in org.surfaceirhello.enroll.pol
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.surfaceirhello.enroll.policy
     DESTINATION ${KDE_INSTALL_DATADIR}/polkit-1/actions COMPONENT KDE)
 install(FILES ../LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/surface-ir-hello-kde COMPONENT KDE)
+
+ki18n_install(po)

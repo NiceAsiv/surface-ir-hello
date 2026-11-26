@@ -21,6 +21,7 @@ find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs objdetect)
 find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 find_package(CURL 7.85 REQUIRED)
 find_package(PkgConfig REQUIRED)
+find_package(Threads REQUIRED)
 find_package(tomlplusplus CONFIG REQUIRED)
 pkg_check_modules(JsonCpp REQUIRED IMPORTED_TARGET jsoncpp)
 find_library(PAM_LIBRARY pam REQUIRED)
@@ -28,11 +29,12 @@ find_library(PAM_LIBRARY pam REQUIRED)
 add_library(surface_ir_core STATIC
     src/native/camera.cpp
     src/native/data.cpp
+    src/native/enrollment.cpp
     src/native/protocol.cpp
     src/native/recognition.cpp
 )
 target_link_libraries(surface_ir_core PUBLIC ${OpenCV_LIBS} PkgConfig::JsonCpp
-    PRIVATE CURL::libcurl OpenSSL::Crypto tomlplusplus::tomlplusplus)
+    PRIVATE Threads::Threads CURL::libcurl OpenSSL::Crypto tomlplusplus::tomlplusplus)
 target_include_directories(surface_ir_core PUBLIC src/native ${OpenCV_INCLUDE_DIRS})
 target_compile_options(surface_ir_core PRIVATE -Wall -Wextra -Wpedantic)
 

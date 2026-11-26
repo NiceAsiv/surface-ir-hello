@@ -35,7 +35,6 @@ bool clearSamples(const std::string &user, const fs::path &directory = facesDir)
 std::string jsonText(const Json::Value &value);
 
 struct Face {
-    cv::Mat image;
     cv::Mat embedding;
     cv::Rect bounds;
     int angle;
@@ -63,7 +62,16 @@ struct Verification {
 };
 
 using Cancel = std::function<bool()>;
-using Progress = std::function<void(const cv::Mat &, const Face *, int, std::string_view)>;
+enum class EnrollmentHint { Warmup, Center, Hold, Vary, Captured };
+struct EnrollmentProgress {
+    const cv::Mat &frame;
+    const Face *face;
+    int captured;
+    EnrollmentHint hint;
+    float confidence;
+};
+using Progress = std::function<void(const EnrollmentProgress &)>;
+std::string enrollmentStatus(const EnrollmentProgress &progress, int target);
 Verification verify(Engine &engine, const Json::Value &samples, const Config &config, const Cancel &cancel = {});
 Json::Value capture(Engine &engine, const IrConfig &config, int target, const Progress &report, const Cancel &cancel = {});
 Verification request(std::string_view query, const fs::path &socket = socketPath);

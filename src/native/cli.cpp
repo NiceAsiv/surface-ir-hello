@@ -215,9 +215,10 @@ int enroll(const Options &opts)
     {
         AlternateScreen screen(opts.preview);
         std::string previous;
-        samples = capture(engine, config.ir, opts.samples, [&](const auto &frame, const Face *face, int, std::string_view status) {
+        samples = capture(engine, config.ir, opts.samples, [&](const EnrollmentProgress &progress) {
+            const auto status = enrollmentStatus(progress, opts.samples);
             if (opts.preview)
-                terminalPreview(frame, face, status);
+                terminalPreview(progress.frame, progress.face, status);
             else if (previous != status) {
                 std::cout << status << std::endl;
                 previous = status;
