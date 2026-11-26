@@ -1,0 +1,10 @@
+#%PAM-1.0
+auth       required                    pam_shells.so
+auth       requisite                   pam_nologin.so
+auth       requisite                   pam_faillock.so preauth
+auth       sufficient                  pam_surface_ir.so quiet
+auth       required                    pam_deny.so
+
+account    include                     system-local-login
+password   required                    pam_deny.so
+session    include                     system-local-login

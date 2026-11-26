@@ -14,5 +14,5 @@ led_channel = 2
 cosine_threshold = 0.40
 # Maximum verification duration in seconds before falling back to password
 timeout_sec = 2.5
-# Require active IR illumination differential (rejects LCD/phone photo spoofs in dark/indoor light)
+# Compare ambient and strobe illumination during verification.
 require_active_ir_liveness = true

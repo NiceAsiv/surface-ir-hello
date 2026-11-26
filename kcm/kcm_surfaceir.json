@@ -1,0 +1,13 @@
+{
+    "KPlugin": {
+        "Name": "Infrared Face Unlock",
+        "Name[zh_CN]": "红外人脸解锁",
+        "Description": "Enroll face samples for the Surface infrared camera",
+        "Description[zh_CN]": "为 Surface 红外摄像头录入人脸样本",
+        "Icon": "edit-image-face-detect-symbolic",
+        "License": "MIT"
+    },
+    "X-KDE-System-Settings-Parent-Category": "security-privacy",
+    "X-KDE-Keywords": "face,infrared,camera,screen lock,biometrics",
+    "X-KDE-Keywords[zh_CN]": "人脸,红外,摄像头,锁屏,生物识别"
+}

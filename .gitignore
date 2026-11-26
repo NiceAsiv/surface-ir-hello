@@ -5,3 +5,9 @@ __pycache__/
 ir_sample.png
 pkg/
 src/*.pkg.tar*
+
+*.onnx
+/ir-*.png
+/faces/
+/tools/pamtest.c
+/build-kcm/

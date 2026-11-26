@@ -11,15 +11,19 @@ import struct
 import sys
 import time
 import tomllib
+from collections import Counter
 
 import numpy as np
 
 from .hardware import IRSensorSession
-from .recognizer import IRFaceEngine, load_user_embeddings
+from .recognizer import DETECTION_ANGLES, IRFaceEngine, load_user_samples
 
 SOCK_DIR = "/run/surface-ir-hello"
 SOCK_PATH = f"{SOCK_DIR}/auth.sock"
 CONFIG_PATH = "/etc/surface-ir-hello/config.toml"
+AE_SAMPLE_INTERVAL = 3
+EMITTER_SETTLE_FRAMES = 3
+FULL_RESOLUTION_INTERVAL = 4
 
 
 def load_config() -> dict:
@@ -52,9 +56,15 @@ def peer_authorized(conn: socket.socket, target_user: str) -> bool:
 
 
 def verify_user(engine: IRFaceEngine, user: str, cfg: dict) -> tuple[bool, str]:
-    templates = load_user_embeddings(user)
-    if not templates:
+    return verify_samples(engine, load_user_samples(user), cfg)
+
+
+def verify_samples(engine: IRFaceEngine, samples: list[dict], cfg: dict) -> tuple[bool, str]:
+    if not samples:
         return False, "NO_MODEL"
+    templates = [np.asarray(sample["embedding"], dtype=np.float32) for sample in samples]
+    angle_counts = Counter(sample.get("angle", 0) for sample in samples)
+    fallback_angles = tuple(sorted(DETECTION_ANGLES, key=angle_counts.__getitem__, reverse=True))
 
     ir_cfg = cfg["ir"]
     auth_cfg = cfg["auth"]
@@ -64,6 +74,8 @@ def verify_user(engine: IRFaceEngine, user: str, cfg: dict) -> tuple[bool, str]:
 
     t0 = time.monotonic()
     best_score = -1.0
+    peak_p95 = 0.0
+    attempts = faces_seen = frame_idx = 0
     with IRSensorSession(
         emitter_ma=float(ir_cfg["emitter_current_ma"]),
         exposure_max=int(ir_cfg["exposure_max"]),
@@ -77,20 +89,27 @@ def verify_user(engine: IRFaceEngine, user: str, cfg: dict) -> tuple[bool, str]:
         amb_p95 = float(np.percentile(amb[::8, ::8], 95))
 
         cam.start_emitter()
-        frame_idx = 0
         while time.monotonic() < deadline and frame_idx < 45:
             f10 = cam.read_raw_frame()
             frame_idx += 1
-            lit_p95 = cam.update_ae(f10, strobe_active=True)
-            if frame_idx < 2:
+            if frame_idx % AE_SAMPLE_INTERVAL == 0:
+                lit_p95 = cam.update_ae(f10, strobe_active=True)
+            else:
+                lit_p95 = max(float(np.percentile(f10[::8, ::8], 95)), 8.0)
+            if frame_idx <= EMITTER_SETTLE_FRAMES:
                 continue
 
+            peak_p95 = max(peak_p95, lit_p95)
             if require_live and amb_p95 < 750.0 and lit_p95 < amb_p95 * 1.12 and lit_p95 < 60.0:
                 continue
 
-            det = engine.detect_and_embed(f10, check_rotations=(frame_idx % 3 == 0))
+            attempts += 1
+            full_resolution = attempts % FULL_RESOLUTION_INTERVAL == 0
+            angles = fallback_angles if full_resolution else fallback_angles[:1]
+            det = engine.detect_and_embed(f10, angles=angles, half_resolution=not full_resolution)
             if not det:
                 continue
+            faces_seen += 1
             feat = det["feature"]
             score = max(engine.match_cosine(feat, t) for t in templates)
             best_score = max(best_score, score)
@@ -99,7 +118,10 @@ def verify_user(engine: IRFaceEngine, user: str, cfg: dict) -> tuple[bool, str]:
                 return True, f"OK score={score:.3f} ms={ms} frames={frame_idx}"
 
     ms = int((time.monotonic() - t0) * 1000)
-    return False, f"FAIL best={best_score:.3f} ms={ms}"
+    return False, (
+        f"FAIL best={best_score:.3f} ms={ms} frames={frame_idx} "
+        f"faces={faces_seen} p95={amb_p95:.0f}/{peak_p95:.0f}"
+    )
 
 
 def main():

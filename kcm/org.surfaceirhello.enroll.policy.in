@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "https://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <action id="org.surfaceirhello.enroll">
+    <description>Enroll a face for infrared screen unlock</description>
+    <description xml:lang="zh_CN">录入红外锁屏解锁人脸</description>
+    <message>Administrator authentication is required to enroll face samples.</message>
+    <message xml:lang="zh_CN">录入人脸样本需要管理员验证。</message>
+    <icon_name>edit-image-face-detect-symbolic</icon_name>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">@SURFACE_IR_HELPER_PATH@</annotate>
+  </action>
+</policyconfig>

@@ -12,14 +12,14 @@ import time
 import cv2
 import numpy as np
 
-from .daemon import SOCK_PATH, load_config
+from .daemon import AE_SAMPLE_INTERVAL, SOCK_PATH, load_config, verify_samples
 from .hardware import IRSensorSession, discover_topology
 from .recognizer import (
     FACES_DIR,
     IRFaceEngine,
     load_user_embeddings,
     normalize_ir10_to_bgr8,
-    save_user_embeddings,
+    update_user_embeddings,
 )
 
 PAM_LINE = "auth       sufficient                  pam_surface_ir.so quiet"
@@ -84,59 +84,124 @@ def cmd_hwcheck(args):
         print(f"  Saved IR image : {args.save_debug}")
 
 
+def show_preview(frame, detection, status):
+    image = normalize_ir10_to_bgr8(frame) if detection is None else detection["bgr"]
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    if detection is not None:
+        x, y, width, height = detection["bbox"]
+        cv2.rectangle(gray, (x, y), (x + width, y + height), 255, 5)
+    size = shutil.get_terminal_size()
+    cols = max(1, min(48, size.columns - 1))
+    rows = max(1, min(size.lines - 3, round(cols * gray.shape[0] / gray.shape[1] / 2)))
+    pixels = cv2.resize(gray, (cols, rows), interpolation=cv2.INTER_AREA)
+    shades = " .:-=+*#%@"
+    lines = ["".join(shades[int(value) * (len(shades) - 1) // 255] for value in row) for row in pixels]
+    print("\x1b[H\x1b[J" + "\n".join([*lines, status]), flush=True)
+
+
+def capture_enrollment(engine, ir_cfg, target, preview, *, on_progress=None, cancelled=None):
+    samples = []
+    embeddings = []
+    last_status = ""
+    last_capture = last_update = 0.0
+    if preview:
+        print("\x1b[?1049h", end="", flush=True)
+        print("Opening the infrared camera. Press Ctrl+C to cancel.", flush=True)
+
+    try:
+        with IRSensorSession(
+            emitter_ma=float(ir_cfg["emitter_current_ma"]),
+            exposure_max=int(ir_cfg["exposure_max"]),
+            gain_max=float(ir_cfg["gain_max"]),
+            target_p95=float(ir_cfg["target_p95"]),
+            led_channel=int(ir_cfg["led_channel"]),
+            enable_emitter=True,
+        ) as cam:
+            cam.start_emitter()
+            frame_idx = 0
+            deadline = time.monotonic() + max(25.0, target * 3.0)
+            while len(samples) < target and time.monotonic() < deadline:
+                if cancelled is not None and cancelled():
+                    raise KeyboardInterrupt
+                frame = cam.read_raw_frame()
+                frame_idx += 1
+                if frame_idx % AE_SAMPLE_INTERVAL == 0:
+                    cam.update_ae(frame, strobe_active=True)
+                now = time.monotonic()
+                if frame_idx <= 12 or now - last_capture < 0.6:
+                    continue
+
+                detection = engine.detect_and_embed(frame)
+                if detection is None:
+                    message = "Face not found. Center your face and move a little closer."
+                elif detection["det_score"] < 0.72:
+                    message = "Face detected but unclear. Hold still and look toward the camera."
+                else:
+                    feature = detection["feature"]
+                    if embeddings and max(engine.match_cosine(feature, item) for item in embeddings) > 0.96:
+                        message = "This view is similar to a sample already captured. Turn slightly or change your distance."
+                    else:
+                        embeddings.append(feature)
+                        last_capture = now
+                        samples.append({
+                            "embedding": [round(float(value), 6) for value in feature],
+                            "det_score": round(detection["det_score"], 4),
+                            "angle": detection["angle"],
+                            "ts": int(time.time()),
+                        })
+                        message = f"Captured. Detection confidence {detection['det_score']:.3f}. Slowly change your pose."
+
+                status = f"[{len(samples)}/{target}] {message}"
+                if preview or on_progress is not None:
+                    if status == last_status and now - last_update < 0.25:
+                        continue
+                    if on_progress is None:
+                        show_preview(frame, detection, status)
+                    else:
+                        on_progress(frame, detection, len(samples), status)
+                elif status != last_status and (last_capture == now or now - last_update >= 1.0):
+                    print(status, flush=True)
+                else:
+                    continue
+                last_status = status
+                last_update = now
+    finally:
+        if preview:
+            print("\x1b[?1049l", end="", flush=True)
+    return samples
+
+
 def cmd_enroll(args):
     require_root()
+    if args.samples < 1:
+        sys.exit("--samples must be at least 1.")
+    if args.preview and not sys.stdout.isatty():
+        sys.exit("--preview requires an interactive terminal.")
+    if args.check and not sys.stdin.isatty():
+        sys.exit("--check requires an interactive terminal.")
+
     user = args.user or os.environ.get("SUDO_USER") or "root"
-    n_target = args.samples
-    cfg = load_config()["ir"]
+    cfg = load_config()
     engine = IRFaceEngine()
-    existing = load_user_embeddings(user)
-    samples = [{"embedding": e.tolist(), "ts": int(time.time())} for e in existing] if args.append else []
 
-    print(f"=== Enrolling IR Face for user '{user}' ({n_target} samples) ===")
-    print("Please look directly at the top bezel IR camera (slightly vary your angle as samples capture)...")
-    captured_embs = []
+    print(f"=== Enrolling IR face for '{user}' ({args.samples} samples) ===")
+    print("Look at the top bezel camera. Slowly vary your head angle and distance.", flush=True)
+    captured = capture_enrollment(engine, cfg["ir"], args.samples, args.preview)
+    if len(captured) != args.samples:
+        sys.exit(f"Captured {len(captured)}/{args.samples} samples before timeout. Existing templates were kept.")
 
-    with IRSensorSession(
-        emitter_ma=float(cfg["emitter_current_ma"]),
-        exposure_max=int(cfg["exposure_max"]),
-        gain_max=float(cfg["gain_max"]),
-        target_p95=float(cfg["target_p95"]),
-        led_channel=int(cfg["led_channel"]),
-        enable_emitter=True,
-    ) as cam:
-        cam.start_emitter()
-        for _ in range(5):
-            cam.update_ae(cam.read_raw_frame(), strobe_active=True)
+    confidence = [sample["det_score"] for sample in captured]
+    print(f"Captured {len(captured)} samples. Detection confidence {min(confidence):.3f}-{max(confidence):.3f}.")
+    if args.check:
+        input("Return to your normal unlock position. Press Enter, then look at the camera for a fresh match. ")
+        ok, message = verify_samples(engine, captured, cfg)
+        threshold = float(cfg["auth"]["cosine_threshold"])
+        print(f"New-sample verification (threshold {threshold:.3f}): {message}")
+        if not ok:
+            sys.exit("Live verification did not pass. Existing templates were kept.")
 
-        deadline = time.monotonic() + 25.0
-        while len(captured_embs) < n_target and time.monotonic() < deadline:
-            f10 = cam.read_raw_frame()
-            cam.update_ae(f10, strobe_active=True)
-            det = engine.detect_and_embed(f10, check_rotations=True)
-            if not det or det["det_score"] < 0.72:
-                continue
-            feat = det["feature"]
-            if captured_embs and max(engine.match_cosine(feat, prev) for prev in captured_embs) > 0.96:
-                time.sleep(0.25)
-                continue
-            captured_embs.append(feat)
-            samples.append(
-                {
-                    "embedding": [round(float(x), 6) for x in feat],
-                    "det_score": round(det["det_score"], 4),
-                    "angle": det["angle"],
-                    "ts": int(time.time()),
-                }
-            )
-            print(f"  [{len(captured_embs)}/{n_target}] Captured clear IR face (score={det['det_score']:.3f}, rot={det['angle']} deg)")
-            time.sleep(0.35)
-
-    if not captured_embs:
-        sys.exit("Enrollment timed out: no clear face detected in front of the IR camera.")
-
-    save_user_embeddings(user, samples)
-    print(f"Successfully saved {len(samples)} IR face template(s) for '{user}' in {FACES_DIR}/{user}.json!")
+    total = update_user_embeddings(user, captured, append=args.append)
+    print(f"Saved {len(captured)} new sample(s) for '{user}' ({total} total).")
 
 
 def cmd_verify(args):
@@ -242,6 +307,8 @@ def main():
     p_en.add_argument("user", nargs="?", help="Target username (defaults to SUDO_USER)")
     p_en.add_argument("--samples", type=int, default=5, help="Number of IR face samples to capture (default: 5)")
     p_en.add_argument("--append", action="store_true", help="Append to existing templates instead of replacing")
+    p_en.add_argument("--preview", action="store_true", help="Show a live grayscale preview in the terminal")
+    p_en.add_argument("--check", action="store_true", help="Verify using only the new samples before saving")
     p_en.set_defaults(func=cmd_enroll)
 
     p_ve = sub.add_parser("verify", help="Test live IR face verification")
@@ -262,7 +329,10 @@ def main():
     p_pd.set_defaults(func=cmd_pam_disable)
 
     args = ap.parse_args()
-    args.func(args)
+    try:
+        args.func(args)
+    except (KeyboardInterrupt, EOFError):
+        ap.exit(130, "\nCancelled.\n")
 
 
 if __name__ == "__main__":

@@ -1,57 +1,76 @@
 # surface-ir-hello
 
-**Windows Hello-style Infrared (IR) Face Authentication for Microsoft Surface Go (Gen 1 / 2 / 3) on Linux.**
+Infrared face unlock for Surface Go on Linux. A small PAM module connects KDE's lock screen to a local daemon that drives the built-in OV7251 infrared camera and loads OpenCV YuNet and SFace.
 
-## Why `surface-ir-hello`?
+The first-generation Surface Go has been tested on Arch Linux with the `linux-surface` kernel, Python 3.14, OpenCV 5.1, and KDE Plasma 6.8.3 (Wayland). Surface Go 2 and 3 are recognized by the hardware code and still need on-device testing.
 
-Existing Linux face unlock setups (`howdy` + `v4l2loopback`) fail on Surface Go devices for four separate reasons:
+## Install
 
-1. **No AVX on Pentium Gold 4415Y / 4425Y (`SIGILL`)**: Prebuilt `dlib` packages require AVX instructions, causing `howdy` to crash with `Illegal instruction (core dumped)` on Surface Go 1/2 CPUs, while `pam-python` / `pkg_resources` broke on Python 3.14+.
-2. **Unmapped IPU3 Monochrome Pipeline & IR Flood Emitter**: `libcamera` skips the monochrome `OV7251` IR sensor, and mainline Linux lacks a kernel flash driver for the `TPS68470` PMIC `WLED2` infrared emitter.
-3. **Zero `v4l2loopback-dkms` Needed (Secure Boot Friendly)**: Reads 10-bit `V4L2_PIX_FMT_IPU3_Y10` (`ip3y`) directly from `/dev/video*` via V4L2 `mmap` with vectorized 10-bit percentile normalization + CLAHE.
-4. **KDE Wayland Lockscreen + Instant `< 350 ms` Unlock**: Unlike `howdy` (which fails inside non-root `kscreenlocker_greet` or takes ~2s cold-starting Python/models), `surface-ir-hellod` pre-warms **OpenCV YuNet + SFace** (`~48 MB` RAM) behind a `SO_PEERCRED`-verified Unix socket paired with a tiny native C PAM module (`pam_surface_ir.so`).
+Install Python, NumPy, OpenCV with `FaceDetectorYN` and `FaceRecognizerSF`, `v4l-utils`, Linux-PAM headers, `curl`, a C compiler, and `make`. On Arch:
 
-## Architecture
-
-```text
-[sudo / SDDM / KDE kscreenlocker]
-        │  (C PAM module: pam_surface_ir.so, skips SSH & closed lid)
-        ▼  Unix Socket (/run/surface-ir-hello/auth.sock, SO_PEERCRED checked)
-[surface-ir-hellod.service]
-        ├─► Media Controller: links ov7251 -> ipu3-csi2 -> /dev/videoX (ip3y 10-bit)
-        ├─► I2C Strobe Sync : TPS68470 WLED2 (852ms HW watchdog) + OV7251 per-frame strobe
-        ├─► Active IR Check : Ambient vs 850nm strobe reflectance liveness check
-        └─► OpenCV DNN (SSE4.2): YuNet (detection + 5 landmarks) -> SFace (128-D cosine match)
-```
-
-## Quick Start (Arch Linux / Fedora / Ubuntu with `linux-surface`)
-
-```bash
-# 1. Build & install
+```sh
+sudo pacman -S --needed python python-numpy python-opencv v4l-utils pam curl gcc make
 make
 sudo make install
-
-# 2. Download OpenCV Zoo ONNX models & test IR camera + emitter
-sudo surface-ir hwcheck --save-debug /tmp/ir-check.png
-
-# 3. Start background authentication daemon
+sudo surface-ir hwcheck
 sudo systemctl enable --now surface-ir-hellod.service
-
-# 4. Enroll your face (5 angles, ~3 seconds)
-sudo surface-ir enroll $USER
-
-# 5. Test live verification speed & score
-surface-ir verify
-
-# 6. Enable in PAM (sudo, KDE lockscreen, SDDM)
-sudo surface-ir pam-enable
 ```
 
-## Safety & Fallback
-- Automatically bypassed over **SSH** (`PAM_RHOST` / `SSH_CONNECTION`) and when the **Type Cover lid is closed**.
-- Hardware-protected IR emitter (`<= 8.1 ms` strobe pulse per `33.3 ms` frame + `TPS68470` `852 ms` hardware timeout + signal-masked register restoration).
-- Instant fallback to standard password prompt if no face is enrolled or camera times out (`sudo surface-ir pam-disable` cleanly restores PAM at any time).
+The installed command uses `/usr/bin/python3`, the same interpreter used to install the package. `hwcheck` tests the camera and emitter and fetches checksum-verified OpenCV Zoo models on first use.
 
-## Credits & References
-- Hardware register insights for `OV7251` strobe & `TPS68470` WLED inspired by [`linux-surface`](https://github.com/linux-surface/linux-surface) community research (Issue #739) and [`pkarnakov/surface-go-ipu3-camera`](https://github.com/pkarnakov/surface-go-ipu3-camera).
-- Face detection & recognition powered by [OpenCV Zoo YuNet & SFace](https://github.com/opencv/opencv_zoo) (Apache-2.0).
+## Enroll and verify
+
+In a local terminal, run:
+
+```sh
+sudo surface-ir enroll --preview --check
+surface-ir verify
+```
+
+Look into the top-bezel camera from your usual unlock position. Slowly vary your angle and distance after each capture. The terminal shows a grayscale preview, a bounding box when a face is detected, capture progress, and the detector confidence. Detector confidence measures face detection. The separate live check compares a fresh frame against the new samples using the same recognition threshold as the daemon.
+
+`--check` prompts for Enter before the fresh capture. The CLI saves only after the requested sample count and optional check succeed. Use `--append` to add to existing samples.
+
+## KDE System Settings enrollment page
+
+The optional native module adds **Infrared Face Unlock** under **Security & Privacy**. It uses C++ and QML, and calls the existing Python capture and verification code. The Polkit helper asks for administrator authorization from the active desktop session and enrolls the calling user's account.
+
+Install the core package first. Install CMake, extra-cmake-modules, Qt 6 Quick, KDE Frameworks 6 KCMUtils, CoreAddons and I18n, and a Polkit authentication agent. Then build the module:
+
+```sh
+cmake -S kcm -B build-kcm -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build-kcm
+sudo cmake --install build-kcm
+```
+
+Reopen System Settings or run `kcmshell6 kcm_surfaceir` to open the page directly. Select **Enroll face**, follow the live preview for five captures, then select **Verify and save**. A passing check appends the new samples. Configure the KDE Face button using the instructions below to use them on the lock screen.
+
+## Enable the KDE Face button
+
+For KDE Plasma 6.8 with the `kde-face` PAM service compiled in, install the example PAM file on a clean setup and enable the user setting. Run `kwriteconfig6` as your desktop user. If `/etc/pam.d/kde-face` already exists, review it before applying the example.
+
+```sh
+sudo install -m 0644 packaging/kde-face.pam /etc/pam.d/kde-face
+kwriteconfig6 --file kscreenlockerrc --group Authenticators --key Face --type bool true
+```
+
+Press `Meta+L`, show the lock screen controls, choose **Face**, and look at the camera. Choose **Password** to return to password authentication. If you previously ran the project's `pam-enable` command, review the legacy hook in `/etc/pam.d/kde` before enabling the separate Face entry.
+
+To remove the dedicated entry, first unlock the desktop and save **Password** as the lock screen method. Then disable the setting and remove the PAM file if you installed it from this repository:
+
+```sh
+kwriteconfig6 --file kscreenlockerrc --group Authenticators --key Face --type bool false
+sudo rm /etc/pam.d/kde-face
+```
+
+## Privacy and authentication
+
+Face templates are local, root-readable files under `/etc/surface-ir-hello/faces/`. Enrollment previews are rendered in the terminal. The program writes a camera image only when you explicitly pass `hwcheck --save-debug`. Leave templates and debug images out of issue reports and patches.
+
+The active IR check measures how scene lighting changes when the emitter is turned on. It has no validated presentation-attack resistance rating. Keep a working password and test it before relying on face unlock.
+
+## Licenses
+
+The project source is [MIT](LICENSE). Models are fetched separately from OpenCV Zoo. [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) uses MIT and [SFace](https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface) uses Apache-2.0.
+
+Hardware research and references include the [linux-surface project](https://github.com/linux-surface/linux-surface) and [surface-go-ipu3-camera](https://github.com/pkarnakov/surface-go-ipu3-camera).
