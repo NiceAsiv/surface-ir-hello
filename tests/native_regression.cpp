@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <sys/socket.h>
 #include <iostream>
+#include <future>
 
 namespace {
 using namespace surface;
@@ -67,6 +68,38 @@ void compatibility()
     expect(stat((directory.path / "demo.json").c_str(), &info) == 0 && (info.st_mode & 0777) == 0600, "private file");
     expect(clearSamples("demo", directory.path) && loadSamples("demo", directory.path).empty(), "clear");
     expect(!validUser("../demo") && !validUser("..") && validUser("local.user"), "account validation");
+    expect(validUser(std::string(64, 'a')) && !validUser(std::string(65, 'a')), "account length");
+    {
+        std::ofstream corrupt(directory.path / "demo.json");
+        corrupt << R"({"version":2,"samples":[]})";
+    }
+    bool rejectedFormat = false;
+    try {
+        loadSamples("demo", directory.path);
+    } catch (const std::runtime_error &) {
+        rejectedFormat = true;
+    }
+    expect(rejectedFormat, "unknown template version");
+
+    constexpr int writers = 8;
+    std::array<std::future<int>, writers> operations;
+    for (int i = 0; i < writers; ++i) {
+        operations[i] = std::async(std::launch::async, [&, i] {
+            auto sample = original;
+            sample[0]["test_writer"] = i;
+            return saveSamples("parallel", sample, true, directory.path);
+        });
+    }
+    std::array<bool, writers> savedCounts{};
+    for (auto &operation : operations) {
+        const auto count = operation.get();
+        expect(count >= 1 && count <= writers, "concurrent append count");
+        savedCounts[count - 1] = true;
+    }
+    const auto combined = loadSamples("parallel", directory.path);
+    expect(combined.size() == writers, "all concurrent appends survived");
+    for (const auto saved : savedCounts)
+        expect(saved, "commits were serialized");
 }
 
 void protocol()

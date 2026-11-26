@@ -2,7 +2,10 @@
 
 Native infrared face unlock for Surface Go on Linux. `surface-ir-hellod` drives the built-in OV7251 infrared camera and TPS68470 emitter, then uses OpenCV YuNet and SFace to match a local template. KDE connects through a PAM module and offers an optional C++/QML enrollment page.
 
-The first-generation Surface Go has been tested on Arch Linux with the `linux-surface` kernel and KDE Plasma 6.8.3 (Wayland). The hardware code also recognizes Surface Go 2 and 3. Those models still need on-device testing.
+| Device | Status |
+| --- | --- |
+| Surface Go (1st generation) | Camera, IR illumination, and KDE face unlock verified on Arch Linux, `linux-surface` 7.3.6, Plasma 6.8.3 (Wayland). |
+| Surface Go 2 and 3 | Recognized by the hardware code. Integration with this application still needs on-device testing. |
 
 ## Build and install
 
@@ -52,7 +55,7 @@ sudo install -m 0644 /usr/share/surface-ir-hello/kde-face.pam /etc/pam.d/kde-fac
 kwriteconfig6 --file kscreenlockerrc --group Authenticators --key Face --type bool true
 ```
 
-Press `Meta+L`, show the lock screen controls, choose **Face**, and look at the camera. Choose **Password** to return to password authentication. If you previously used `surface-ir pam-enable`, review the legacy hook in `/etc/pam.d/kde` before enabling the separate Face entry.
+Press `Meta+L`, show the lock screen controls, choose **Face**, and look at the camera. Choose **Password** to return to password authentication. For a lock-screen-only setup, use the dedicated `kde-face` service above. If you previously enabled the legacy hooks, `sudo surface-ir pam-disable` removes them from `sudo`, SDDM and the regular KDE password service. It leaves `kde-face` available.
 
 To remove the dedicated entry, first unlock the desktop using **Password**. Disable the setting and remove the PAM file if you installed it from this repository:
 
@@ -64,6 +67,16 @@ sudo rm /etc/pam.d/kde-face
 ## Upgrading from the Python prototype
 
 Install both native components if you already use the graphical enrollment page. Reload systemd and restart `surface-ir-hellod.service`. The native implementation reads the existing version-1 JSON templates in `/etc/surface-ir-hello/faces/` and the existing TOML settings. `surface-ir --version` identifies the native CLI.
+
+## Testing and compatibility
+
+Run `ctest --test-dir build --output-on-failure` after building. It checks IPU3 frame unpacking, template format and concurrent writes, and the socket protocol. On Linux-PAM versions that provide an isolated configuration directory, it also checks that the module declines remote authentication before prompting.
+
+To report another device, include its model, distribution, kernel and Plasma versions, plus the text output from `sudo surface-ir hwcheck`. Run the hardware check without `--save-debug`. Record hardware capture, desktop enrollment, face unlock and password unlock as separate results.
+
+Independent reports describe [Plasma face unlock on a Surface Go 2](https://github.com/linux-surface/linux-surface/issues/739) and [IR capture with its emitter on a Surface Go 3](https://github.com/linux-surface/linux-surface/discussions/2308). They are useful references for device testing. The application's verified configurations are listed above.
+
+PAM connects the desktop's authentication service to the running face-verification daemon. Userspace still needs working IR frames and emitter support. KDE's dedicated Face button also requires a Plasma build that enables the `kde-face` service.
 
 ## Privacy and authentication
 
