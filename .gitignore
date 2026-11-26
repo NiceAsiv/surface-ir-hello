@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.so
+*.o
+ir_sample.png
+pkg/
+src/*.pkg.tar*

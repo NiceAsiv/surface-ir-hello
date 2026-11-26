@@ -1,0 +1,18 @@
+# /etc/surface-ir-hello/config.toml
+[ir]
+# Emitter current in mA (32.5 mA steps, 130..520 mA; 390 mA recommended)
+emitter_current_ma = 390
+# Maximum exposure lines (<= 400 = 7.7 ms pulse per 33 ms frame)
+exposure_max = 380
+gain_max = 8.0
+target_p95 = 600.0
+# Preferred TPS68470 WLED channel (2 on Surface Go 1/2/3)
+led_channel = 2
+
+[auth]
+# OpenCV SFace cosine similarity threshold (official benchmark: 0.363; 0.40 = strict)
+cosine_threshold = 0.40
+# Maximum verification duration in seconds before falling back to password
+timeout_sec = 2.5
+# Require active IR illumination differential (rejects LCD/phone photo spoofs in dark/indoor light)
+require_active_ir_liveness = true

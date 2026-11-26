@@ -1,0 +1,20 @@
+# Maintainer: niceasiv
+pkgname=surface-ir-hello
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Zero-DKMS Windows Hello style IR face authentication for Surface Go 1/2/3 (IPU3 + OV7251 + TPS68470, non-AVX CPU safe)"
+arch=('x86_64')
+license=('MIT')
+depends=('python' 'python-numpy' 'python-opencv' 'v4l-utils' 'pam' 'curl')
+makedepends=('gcc' 'make')
+backup=('etc/surface-ir-hello/config.toml')
+
+build() {
+    cd "$startdir/.."
+    make
+}
+
+package() {
+    cd "$startdir/.."
+    make DESTDIR="$pkgdir" install
+}
