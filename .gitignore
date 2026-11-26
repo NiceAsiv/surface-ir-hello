@@ -11,3 +11,4 @@ src/*.pkg.tar*
 /faces/
 /tools/pamtest.c
 /build-kcm/
+/build/

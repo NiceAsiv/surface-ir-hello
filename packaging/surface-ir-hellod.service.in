@@ -4,14 +4,14 @@ After=local-fs.target systemd-udevd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 -u -m surface_ir_hello.daemon
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/surface-ir-hellod
 Restart=on-failure
 RestartSec=2
 User=root
 Group=root
 RuntimeDirectory=surface-ir-hello
 ProtectHome=true
-NoNewPrivileges=false
+NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target

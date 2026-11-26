@@ -1,20 +1,32 @@
 # Maintainer: niceasiv
-pkgname=surface-ir-hello
-pkgver=0.1.0
+pkgbase=surface-ir-hello
+pkgname=('surface-ir-hello' 'surface-ir-hello-kde')
+pkgver=0.2.0
 pkgrel=1
-pkgdesc="Zero-DKMS Windows Hello style IR face authentication for Surface Go 1/2/3 (IPU3 + OV7251 + TPS68470, non-AVX CPU safe)"
+pkgdesc="Native infrared face authentication for Microsoft Surface Go on Linux"
 arch=('x86_64')
 license=('MIT')
-depends=('python' 'python-numpy' 'python-opencv' 'v4l-utils' 'pam' 'curl')
-makedepends=('gcc' 'make')
-backup=('etc/surface-ir-hello/config.toml')
+makedepends=('cmake' 'gcc' 'pkgconf' 'opencv' 'openssl' 'curl' 'jsoncpp' 'tomlplusplus'
+             'pam' 'extra-cmake-modules' 'qt6-base' 'qt6-declarative' 'kcmutils' 'ki18n' 'kcoreaddons')
 
 build() {
-    cd "$startdir/.."
-    make
+    cmake -S "$startdir/.." -B "$srcdir/build" \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DCMAKE_BUILD_TYPE=None \
+        -DSURFACE_IR_KDE=ON
+    cmake --build "$srcdir/build"
 }
 
-package() {
-    cd "$startdir/.."
-    make DESTDIR="$pkgdir" install
+package_surface-ir-hello() {
+    depends=('gcc-libs' 'opencv' 'openssl' 'curl' 'jsoncpp' 'tomlplusplus' 'pam')
+    optdepends=('surface-ir-hello-kde: graphical enrollment in KDE System Settings')
+    backup=('etc/surface-ir-hello/config.toml')
+    DESTDIR="$pkgdir" cmake --install "$srcdir/build" --component Core
+}
+
+package_surface-ir-hello-kde() {
+    pkgdesc="Infrared face enrollment module for KDE System Settings"
+    depends=("surface-ir-hello=$pkgver" 'kcmutils' 'kcoreaddons' 'ki18n' 'kirigami'
+             'qt6-base' 'qt6-declarative' 'polkit' 'systemsettings')
+    DESTDIR="$pkgdir" cmake --install "$srcdir/build" --component KDE
 }
